@@ -1,5 +1,8 @@
 node_modules/
 .env
 *.log
+# Lead database (names, emails, phones) — runtime data, never committed
+# or served over HTTP.
+data/
 .DS_Store
 Thumbs.db

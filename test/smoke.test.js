@@ -80,3 +80,30 @@ test('returns 404 for unknown pages', async () => {
   const res = await fetch(`${BASE}/does-not-exist`);
   assert.strictEqual(res.status, 404);
 });
+
+// The lead database and the server's own source used to be downloadable from
+// the public site because the whole project folder was served statically.
+test('does not serve the lead database or server source', async () => {
+  const secretPaths = [
+    '/data/leads.json',
+    '/data/',
+    '/server.js',
+    '/package.json',
+    '/package-lock.json',
+    '/.gitignore',
+    '/test/smoke.test.js',
+    '/node_modules/express/package.json',
+    '/%2e%2e/package.json',
+    // Encoded traversal riding on an allowed prefix, and Windows separators
+    '/css/%2e%2e%2fdata%2fleads.json',
+    '/js/..%5cdata%5cleads.json',
+    '/js/%5c..%5cdata%5cleads.json',
+    '/css/../data/leads.json',
+  ];
+  for (const secret of secretPaths) {
+    const res = await fetch(`${BASE}${secret}`);
+    assert.strictEqual(res.status, 404, `${secret} must not be public`);
+    const body = await res.text();
+    assert.ok(!/"demos"|"signups"|"newsletters"/.test(body), `${secret} leaked lead data`);
+  }
+});

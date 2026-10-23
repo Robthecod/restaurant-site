@@ -31,6 +31,8 @@ app.use(cors());
 app.use(express.json());
 
 // ─── File System Helpers ────────────────────────────────────────────────
+// This public marketing site is intentionally lean (no database dependency).
+// It uses JSON files only for lead/signup capture.
 
 function ensureDataDir() {
   if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -65,8 +67,55 @@ app.get('/landing.html', (req, res) => {
   res.redirect(301, '/');
 });
 
-// Serve the marketing site (index.html, terms, privacy, assets)
-app.use(express.static(path.join(__dirname)));
+// Serve the marketing site (index.html, terms, privacy, assets) — and nothing
+// else. Serving the whole project folder used to publish the lead database
+// (names, emails, phones) at /data/leads.json, plus server.js and package.json.
+const PUBLIC_FILES = new Set([
+  '',
+  'index.html',
+  'terms.html',
+  'privacy.html',
+  '404.html',
+  'robots.txt',
+  'manifest.json',
+  'sw.js',
+]);
+const PUBLIC_DIRS = ['css/', 'js/', 'icons/'];
+
+app.use((req, res, next) => {
+  // API routes and the health probe are handled further down.
+  if (req.path === '/health' || req.path.startsWith('/api/')) return next();
+
+  const notFound = () => res.status(404).sendFile(path.join(__dirname, '404.html'));
+
+  let rel;
+  try {
+    rel = decodeURIComponent(req.path)
+      .replace(/\\/g, '/') // Windows backslash separators
+      .replace(/\/{2,}/g, '/')
+      .replace(/^\/+/, '');
+  } catch (err) {
+    return res.status(400).send('Bad request');
+  }
+
+  // No dot segments, so "css/../data/leads.json" (or its encoded form) cannot
+  // ride in on an allowed prefix.
+  if (rel.split('/').some((segment) => segment === '.' || segment === '..')) {
+    return notFound();
+  }
+
+  if (rel !== '' && !PUBLIC_FILES.has(rel) && !PUBLIC_DIRS.some((dir) => rel.startsWith(dir))) {
+    return notFound();
+  }
+
+  // Hand the static handler exactly the path that was just validated — it must
+  // not decode the request a second time (`%2e%2e%2f` used to slip through).
+  const query = req.url.indexOf('?');
+  req.url = '/' + rel + (query === -1 ? '' : req.url.slice(query));
+  return next();
+});
+
+app.use(express.static(path.join(__dirname), { dotfiles: 'deny' }));
 
 // ─── LEAD GENERATION API ─────────────────────────────────────────────
 
